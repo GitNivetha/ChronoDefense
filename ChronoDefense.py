@@ -1,296 +1,223 @@
-import pandas as pd
-import numpy as np
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.model_selection import train_test_split
-from sklearn.metrics import accuracy_score
-from sklearn.preprocessing import StandardScaler
-from datetime import datetime, timedelta
-import random
-import socket
-import geocoder
-import openpyxl
-from openpyxl.styles import PatternFill
-from tkinter import Tk, Button, Label, filedialog, messagebox
+# ===================== IMPORTS =====================
 import cv2
 import os
 import pickle
-from tkinter import simpledialog
+import random
+import socket
+import geocoder
+import pandas as pd
+import numpy as np
+from datetime import datetime, timedelta
+from tkinter import Tk, Button, Label, messagebox, filedialog, simpledialog
+from sklearn.preprocessing import StandardScaler
+from sklearn.model_selection import train_test_split
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import accuracy_score
+import openpyxl
+from openpyxl.styles import PatternFill
 
-# Function to get system IP address and location
+# ===================== SYSTEM INFO =====================
 def get_system_info():
-    ip_address = socket.gethostbyname(socket.gethostname())
-    g = geocoder.ip(ip_address)
-    location = g.city if g.city else "Unknown City"
-    region = g.country if g.country else "Unknown Country"
-    return ip_address, location, region
+    ip = socket.gethostbyname(socket.gethostname())
+    g = geocoder.ip(ip)
+    region = g.country if g.country else "Unknown"
+    return ip, region
 
-# Simulate historical cyber attack data based on system's IP addresses
-def generate_data(num_records=1000):
-    np.random.seed(42)
-    random.seed(42)
-    
-    ip_address, location, region = get_system_info()
-    attack_types = ['DDoS', 'Phishing', 'Malware', 'Ransomware','Cloud-based-attacks','Data-center-attacks','Password attacks','web attacks','Trojan horses']
-    ports = [80, 443, 21, 22, 25, 8080]
-    protocols = ['TCP', 'UDP', 'ICMP','HTTP','FTP','SMTP','IP']
-    
+# ===================== DATA GENERATION =====================
+def generate_data(records=500):
+    ip, region = get_system_info()
+    attacks = ['DDoS', 'Phishing', 'Malware', 'Ransomware']
+    ports = [80, 443, 21, 22]
+    protocols = ['TCP', 'UDP', 'HTTP']
+
     data = []
-    
-    for _ in range(num_records):
-        attack_type = random.choice(attack_types)
-        port = random.choice(ports)
-        timestamp = datetime.now() - timedelta(days=random.randint(0, 365))
-        attack_duration = random.randint(1, 3600)  # in seconds
+    for _ in range(records):
         impact = random.randint(1, 10)
-        success_level = random.randint(1, 10)
-        protocol = random.choice(protocols)
-        
-        severity_score = impact * success_level  # Simplified severity score calculation
-        
-        data.append([severity_score, ip_address, attack_type, port, timestamp, attack_duration, region, impact, success_level, protocol])
-    
-    columns = ['SeverityScore', 'IPAddress', 'AttackType', 'Port', 'Timestamp', 'AttackDuration', 'Region', 'Impact', 'SuccessLevel', 'Protocol']
-    df = pd.DataFrame(data, columns=columns)
-    
-    return df
+        success = random.randint(1, 10)
+        severity = impact * success
 
-# Generate and save historical data
+        data.append([
+            severity, ip,
+            random.choice(attacks),
+            random.choice(ports),
+            datetime.now() - timedelta(days=random.randint(1, 365)),
+            random.randint(10, 300),
+            region, impact, success,
+            random.choice(protocols)
+        ])
+
+    columns = [
+        'SeverityScore', 'IPAddress', 'AttackType', 'Port',
+        'Timestamp', 'Duration', 'Region',
+        'Impact', 'Success', 'Protocol'
+    ]
+    return pd.DataFrame(data, columns=columns)
+
+# ===================== ML MODEL =====================
 historical_data = generate_data()
-historical_data.to_csv('historical_cyber_attacks.csv', index=False)
+historical_data.to_csv("cyber_history.csv", index=False)
 
-# Load historical data
-data = pd.read_csv('historical_cyber_attacks.csv')
+data = pd.read_csv("cyber_history.csv")
+data = pd.get_dummies(data, columns=['AttackType', 'Region', 'Protocol'])
 
-# Preprocess data
-data['Timestamp'] = pd.to_datetime(data['Timestamp'])
-data_encoded = pd.get_dummies(data, columns=['AttackType', 'Region', 'Protocol'])
+X = data.drop(columns=['SeverityScore', 'IPAddress', 'Timestamp'])
+y = data['SeverityScore']
 
-# Save original columns before converting to NumPy array
-original_columns = data_encoded.drop(columns=['SeverityScore', 'IPAddress', 'Timestamp']).columns
-
-# Split data into features and labels
-X = data_encoded.drop(columns=['SeverityScore', 'IPAddress', 'Timestamp'])
-y = data_encoded['SeverityScore']
-
-# Normalize data
 scaler = StandardScaler()
 X = scaler.fit_transform(X)
 
-# Split into training and testing sets
-X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
-
-# Train a Random Forest model
-model = RandomForestClassifier(n_estimators=100, random_state=42)
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2)
+model = RandomForestClassifier()
 model.fit(X_train, y_train)
 
-# Make predictions and evaluate
-y_pred = model.predict(X_test)
-print("Model Accuracy:", accuracy_score(y_test, y_pred))
+print("Model Accuracy:", accuracy_score(y_test, model.predict(X_test)))
 
-# Predict future threats (simulated data for the next month)
-def predict_future_threats(model, scaler, original_columns, num_days=30):
-    future_data = generate_data(num_records=num_days)
-    future_data['Timestamp'] = pd.to_datetime(future_data['Timestamp'])
-    future_data_encoded = pd.get_dummies(future_data, columns=['AttackType', 'Region', 'Protocol'])
-    
-    # Ensure future data has same columns as training data
-    for col in original_columns:
-        if col not in future_data_encoded.columns:
-            future_data_encoded[col] = 0
-    future_data_encoded = future_data_encoded[original_columns]
-    
-    future_X = scaler.transform(future_data_encoded)
-    future_data['PredictedSeverityScore'] = model.predict(future_X)
-    
-    # Predict future attack type based on the most frequent type predicted
-    future_data['PredictedAttackType'] = future_data_encoded[['AttackType_DDoS', 'AttackType_Phishing', 'AttackType_Malware', 'AttackType_Ransomware']].idxmax(axis=1).str.replace('AttackType_', '')
-
-    return future_data
-
-future_threats = predict_future_threats(model, scaler, original_columns)
-
-# Generate mitigation measures (simplified example)
-def suggest_mitigation_measures(threats):
-    mitigation_measures = []
-    for _, row in threats.iterrows():
-        if row['PredictedSeverityScore'] > 70:
-            measure = "Immediate action required: Isolate the affected systems and begin incident response procedures."
-        elif row['PredictedSeverityScore'] > 40:
-            measure = "High priority: Monitor the systems closely and prepare for potential incident response."
-        else:
-            measure = "Low priority: Regular monitoring and standard security practices."
-        mitigation_measures.append(measure)
-    
-    threats['MitigationMeasures'] = mitigation_measures
-    return threats
-
-future_threats_with_measures = suggest_mitigation_measures(future_threats)
-
-# Save reports with formatting
-def save_report_with_formatting(df, filename):
+# ===================== REPORT SAVE =====================
+def save_report(df, filename):
     df.to_excel(filename, index=False)
-    
     wb = openpyxl.load_workbook(filename)
     ws = wb.active
-    
-    # Define fill colors for conditional formatting
-    green_fill = PatternFill(start_color="00FF00", end_color="00FF00", fill_type="solid")
-    yellow_fill = PatternFill(start_color="FFFF00", end_color="FFFF00", fill_type="solid")
-    red_fill = PatternFill(start_color="FF0000", end_color="FF0000", fill_type="solid")
-    
-    for row in ws.iter_rows(min_row=2, max_row=ws.max_row, min_col=1, max_col=23):  # Extend the color to the first 23 columns
-        severity_score = row[0].value  # Assuming SeverityScore is the first column
-        if severity_score is not None:
-            if severity_score < 40:
-                fill = green_fill
-            elif severity_score < 70:
-                fill = yellow_fill
-            else:
-                fill = red_fill
-            for cell in row:
-                cell.fill = fill  # Apply the fill to the first 23 columns of the row
-    
+
+    green = PatternFill("solid", "00FF00")
+    yellow = PatternFill("solid", "FFFF00")
+    red = PatternFill("solid", "FF0000")
+
+    for row in ws.iter_rows(min_row=2):
+        score = row[0].value
+        fill = green if score < 40 else yellow if score < 70 else red
+        for cell in row:
+            cell.fill = fill
+
     wb.save(filename)
 
-# Facial Recognition and Authentication System
-
-# Initialize global variables
+# ===================== FACE AUTH =====================
 username = ""
 face_data = {}
-face_recognizer = cv2.face.LBPHFaceRecognizer_create()
+recognizer = cv2.face.LBPHFaceRecognizer_create()
 
-# Function to save the username and face data
-def save_username_and_face_data(username, face_data):
-    with open("face_data.pkl", "wb") as file:
-        pickle.dump((username, face_data), file)
-    messagebox.showinfo("Success", "Registered Successfully")
+def save_face():
+    with open("face.pkl", "wb") as f:
+        pickle.dump((username, face_data), f)
 
-# Function to load the username and face data
-def load_username_and_face_data():
+def load_face():
     global username, face_data
-    if os.path.exists("face_data.pkl"):
-        with open("face_data.pkl", "rb") as file:
-            username, face_data = pickle.load(file)
-            if "samples" in face_data:
-                face_recognizer.train(face_data["samples"], np.array(range(len(face_data["samples"]))))
+    if os.path.exists("face.pkl"):
+        with open("face.pkl", "rb") as f:
+            username, face_data = pickle.load(f)
+            recognizer.train(face_data["samples"],
+                             np.arange(len(face_data["samples"])))
 
-# Function to register face
+# ===================== REGISTER FACE =====================
 def register_face():
     global username
-    if username == "":
-        messagebox.showwarning("Input Error", "Please enter the username.")
-        return
 
-    if face_data:
-        messagebox.showwarning("Registration Error", "User already registered. Please remove authorization before registering a new user.")
+    if not username:
+        messagebox.showerror("Error", "Enter username")
         return
 
     cap = cv2.VideoCapture(0)
-    face_cascade = cv2.CascadeClassifier('C:/Users/WINDOWS/OneDrive/Desktop/CHRONO/haarcascade_frontalface_default.xml')
+    cascade = cv2.CascadeClassifier(
+        cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
+    )
+
     samples = []
     count = 0
 
     while True:
         ret, frame = cap.read()
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        faces = face_cascade.detectMultiScale(gray, 1.3, 5)
-        for (x, y, w, h) in faces:
-            count += 1
-            face = gray[y:y+h, x:x+w]
-            samples.append(face)
-            cv2.imshow("Capturing Face", frame)
-            if count >= 20:
-                break
+        faces = cascade.detectMultiScale(gray, 1.1, 4)
 
-        if cv2.waitKey(1) & 0xFF == ord('q') or count >= 20:
+        for x, y, w, h in faces:
+            face = gray[y:y+h, x:x+w]
+            face = cv2.resize(face, (200, 200))
+            samples.append(face)
+            count += 1
+            cv2.rectangle(frame, (x,y), (x+w,y+h), (0,255,0), 2)
+            cv2.putText(frame, f"{count}/20", (x, y-10),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0,255,0), 2)
+
+        cv2.imshow("Register Face", frame)
+        if cv2.waitKey(1) == 27 or count >= 20:
             break
 
     cap.release()
     cv2.destroyAllWindows()
 
-    face_data["samples"] = samples
-    face_recognizer.train(face_data["samples"], np.array(range(len(face_data["samples"]))))
-    save_username_and_face_data(username, face_data)
+    if len(samples) < 10:
+        messagebox.showerror("Error", "Face not detected properly")
+        return
 
-# Function to authenticate face
-def authenticate_face():
+    face_data["samples"] = samples
+    recognizer.train(samples, np.arange(len(samples)))
+    save_face()
+    messagebox.showinfo("Success", "Face Registered")
+
+# ===================== AUTHENTICATE =====================
+def authenticate():
     cap = cv2.VideoCapture(0)
-    face_cascade = cv2.CascadeClassifier('C:/Users/WINDOWS/OneDrive/Desktop/CHRONO/haarcascade_frontalface_default.xml')
+    cascade = cv2.CascadeClassifier(
+        cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
+    )
 
     while True:
         ret, frame = cap.read()
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        faces = face_cascade.detectMultiScale(gray, 1.3, 5)
-        for (x, y, w, h) in faces:
+        faces = cascade.detectMultiScale(gray, 1.1, 4)
+
+        for x, y, w, h in faces:
             face = gray[y:y+h, x:x+w]
-            label, confidence = face_recognizer.predict(face)
-            if confidence < 50:  # Adjust confidence threshold as needed
+            face = cv2.resize(face, (200, 200))
+            label, conf = recognizer.predict(face)
+
+            if conf < 60:
                 cap.release()
                 cv2.destroyAllWindows()
                 messagebox.showinfo("Access Granted", f"Welcome {username}")
-                generate_reports()
+                generate_report()
                 return
             else:
-                messagebox.showwarning("Access Denied", "Authentication failed. Please try again.")
+                messagebox.showerror("Denied", "Authentication Failed")
                 cap.release()
                 cv2.destroyAllWindows()
                 return
 
-        cv2.imshow("Authenticating Face", frame)
-
-        if cv2.waitKey(1) & 0xFF == ord('q'):
+        cv2.imshow("Authenticate", frame)
+        if cv2.waitKey(1) == 27:
             break
 
     cap.release()
     cv2.destroyAllWindows()
 
-# Function to reset the registration
-def reset_registration():
-    global username, face_data
-    username = ""
-    face_data.clear()
-    if os.path.exists("face_data.pkl"):
-        os.remove("face_data.pkl")
-    messagebox.showinfo("Success", "Reset Successfully")
+# ===================== REPORT GENERATION =====================
+def generate_report():
+    file = filedialog.asksaveasfilename(
+        defaultextension=".xlsx",
+        filetypes=[("Excel Files", "*.xlsx")]
+    )
+    if file:
+        save_report(historical_data, file)
+        messagebox.showinfo("Report Generated",
+                            "Cyber Security Threat Report Saved Successfully")
 
-# Function to generate and save reports
-def generate_reports():
-    historical_report_filename = filedialog.asksaveasfilename(defaultextension=".xlsx", filetypes=[("Excel files", "*.xlsx")])
-    if historical_report_filename:
-        save_report_with_formatting(historical_data, historical_report_filename)
-    
-    future_threat_report_filename = filedialog.asksaveasfilename(defaultextension=".xlsx", filetypes=[("Excel files", "*.xlsx")])
-    if future_threat_report_filename:
-        save_report_with_formatting(future_threats_with_measures, future_threat_report_filename)
-
-# Tkinter GUI for Facial Recognition and Authentication
-def start_gui():
+# ===================== GUI =====================
+def set_username(root):
     global username
+    username = simpledialog.askstring("Username", "Enter username", parent=root)
+
+def start_gui():
     root = Tk()
-    root.title("Facial Recognition System")
+    root.title("AI-Driven Cyber Security Time Machine")
 
-    Label(root, text="Username:").pack()
-    username_entry = Button(root, text="Enter Username", command=lambda: set_username(root))
-    username_entry.pack()
-
-    register_button = Button(root, text="Register Face", command=register_face)
-    register_button.pack()
-
-    authenticate_button = Button(root, text="Authenticate Face", command=authenticate_face)
-    authenticate_button.pack()
-
-    reset_button = Button(root, text="Reset Registration", command=reset_registration)
-    reset_button.pack()
+    Label(root, text="Secure Cyber Threat System").pack(pady=5)
+    Button(root, text="Enter Username",
+           command=lambda: set_username(root)).pack(pady=5)
+    Button(root, text="Register Face",
+           command=register_face).pack(pady=5)
+    Button(root, text="Authenticate & Generate Report",
+           command=authenticate).pack(pady=5)
 
     root.mainloop()
 
-# Function to set the username through dialog
-def set_username(root):
-    global username
-    username = simpledialog.askstring("Input", "Please enter your username:", parent=root)
-
-# Load face data when starting the application
-load_username_and_face_data()
-
-# Start the GUI
+load_face()
 start_gui()
